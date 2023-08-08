@@ -1,25 +1,40 @@
 steps:
-  - label: " :Build: build"
-    command: echo "Build the rocket"
-    key: build
-  
-  - label: " Test"
-    command: echo "Test the rocket"
-    key: test
-    depends_on: build
+  - label: ":docker: Build and Push Docker Image"
+    plugins:
+      - docker#v3.7.0:
+          build: "  /root/dockerfile/Dockerfile"  # Replace with the actual path
+          tag: " lokesh:latest 742579007652.dkr.ecr.us-east-1.amazonaws.com/lokesh:latest:{{ buildkite.build.number }}"
+    env:
+      AWS_REGION: "us-east-1"
+    key: "docker-build"
 
-  - label: " Deploy"
-    command: echo " Launch the rocket"
-    key: deploy
-    depends_on: test
+  - wait
+
+  - label: ":aws: Push Docker Image to ECR"
+    command:
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 742579007652.dkr.ecr.us-east-1.amazonaws.com
+      - docker push 742579007652.dkr.ecr.us-east-1.amazonaws.com/lokesh:latest:{{ buildkite.build.number }}
+    depends_on:
+      - docker-build
+    key: "docker-push"
+
+
+  - wait
+
+  - label: ":ship: Deploy to ECS"
+    # Add deployment steps here, if applicable
   
-  - label: ":package: Package"
-    command: tests.sh
-    artifact_paths: "pkg/*"
-    
-  - label: ":hammer: Example Script"
-    command: "tests.sh"
-    artifact_paths: "artifacts/*"
+  - label: ":aws: Deploy to ECS"
+    plugins:
+      - ecs-deploy#v2.0.0:
+          key: $AWS_ACCESS_KEY_ID
+          secret: $AWS_SECRET_ACCESS_KEY
+          region: us-east-1
+          # Other ECS deployment configuration
+    commands:
+      - echo "Deploying to ECS"
+
+
     agents:
       queue: "${BUILDKITE_AGENT_META_DATA_QUEUE:-default}"
     
